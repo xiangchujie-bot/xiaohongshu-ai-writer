@@ -33,7 +33,11 @@ class SiliconFlowService {
 
   constructor() {
     this.baseURL = import.meta.env.VITE_SILICONFLOW_BASE_URL || 'https://api.siliconflow.cn/v1';
-    this.apiKey = import.meta.env.VITE_SILICONFLOW_API_KEY || '';
+    
+    // 优先使用环境变量，其次使用内置 API Key
+    this.apiKey = import.meta.env.VITE_SILICONFLOW_API_KEY || 
+                  'sk-apmppebtokzdzsvzbssynbefsaxwwxpurjzojfpnqrcerwvj'; // 你的硅基流动 API Key
+    
     this.model = 'Qwen/Qwen2.5-7B-Instruct'; // 使用通义千问模型
   }
 
@@ -110,7 +114,7 @@ class SiliconFlowService {
 
   async generateCopywriting(input: CopywritingInput): Promise<GeneratedCopy[]> {
     if (!this.apiKey) {
-      throw new Error('请配置 VITE_SILICONFLOW_API_KEY 环境变量');
+      throw new Error('API Key 未配置');
     }
 
     const request: SiliconFlowRequest = {
