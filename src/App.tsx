@@ -2,9 +2,11 @@ import { useState } from 'react';
 import InputPanel from './components/InputPanel';
 import ResultCard from './components/ResultCard';
 import HistoryPanel from './components/HistoryPanel';
+import FavoritesPanel from './components/FavoritesPanel';
+import DetailModal from './components/DetailModal';
 import Toast from './components/Toast';
 import type { CopywritingInput, GeneratedCopy, HistoryItem } from './types';
-import { MessageCircle, History, Sparkles } from 'lucide-react';
+import { MessageCircle, History, Heart, Sparkles } from 'lucide-react';
 import { siliconFlowService } from './services/siliconflow';
 import { useToast } from './hooks/useToast';
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -14,7 +16,9 @@ function App() {
   const [currentResults, setCurrentResults] = useState<GeneratedCopy[]>([]);
   const [history, setHistory] = useLocalStorage<HistoryItem[]>('xiaohongshu-history', mockHistoryData);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
+  const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'favorites'>('generate');
+  const [selectedCopy, setSelectedCopy] = useState<GeneratedCopy | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const { toasts, showSuccess, showError, removeToast } = useToast();
 
   const handleGenerate = async (input: CopywritingInput) => {
@@ -44,40 +48,58 @@ function App() {
 
   const handleCopy = (content: string) => {
     navigator.clipboard.writeText(content).then(() => {
-      showSuccess('内容已复制到剪贴板');
+      showSuccess('文案已复制到剪贴板');
     }).catch(() => {
       showError('复制失败，请手动复制');
     });
   };
 
-  const handleFavorite = (id: string) => {
-    setCurrentResults(prev => 
-      prev.map(item => 
-        item.id === id ? { ...item, isFavorite: !item.isFavorite } : item
-      )
-    );
-    
-    const item = currentResults.find(r => r.id === id);
-    if (item) {
-      showSuccess(item.isFavorite ? '已取消收藏' : '已添加到收藏');
-    }
-  };
-
-  const handleShare = (content: string) => {
+  const handleShare = (copy: GeneratedCopy) => {
     if (navigator.share) {
       navigator.share({
-        title: '小红书文案',
-        text: content
+        title: copy.title,
+        text: copy.content,
       }).then(() => {
         showSuccess('分享成功');
       }).catch(() => {
         showError('分享失败');
       });
     } else {
-      navigator.clipboard.writeText(content).then(() => {
-        showSuccess('内容已复制，可以分享给朋友');
-      });
+      handleCopy(`${copy.title}\n\n${copy.content}`);
     }
+  };
+
+  const handleFavorite = (copy: GeneratedCopy) => {
+    // 更新历史记录中的收藏状态
+    const updatedHistory = history.map(item => ({
+      ...item,
+      outputs: item.outputs.map(output => 
+        output.id === copy.id 
+          ? { ...output, isFavorite: !output.isFavorite }
+          : output
+      )
+    }));
+    
+    setHistory(updatedHistory);
+    
+    // 更新当前结果中的收藏状态
+    setCurrentResults(prev => prev.map(result => 
+      result.id === copy.id 
+        ? { ...result, isFavorite: !result.isFavorite }
+        : result
+    ));
+    
+    showSuccess(copy.isFavorite ? '已取消收藏' : '已添加到收藏');
+  };
+
+  const handleCopyClick = (copy: GeneratedCopy) => {
+    setSelectedCopy(copy);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedCopy(null);
   };
 
   const handleDeleteHistory = (id: string) => {
@@ -85,101 +107,144 @@ function App() {
     showSuccess('历史记录已删除');
   };
 
-  const handleSelectHistory = (item: HistoryItem) => {
-    setCurrentResults(item.outputs);
-    setActiveTab('generate');
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-xiaohongshu-light/50 to-white">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
+    <div className="min-h-screen bg-xiaohongshu-light">
+      <div className="container mx-auto px-4 py-8">
         {/* 头部 */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2 flex items-center justify-center gap-2">
-            <Sparkles className="w-8 h-8 text-xiaohongshu-red" />
-            小红书爆款文案生成器
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            小红书爆款文案 AI 引擎
           </h1>
-          <p className="text-gray-600">AI 驱动，一键生成种草文案</p>
+          <p className="text-gray-600">
+            智能生成种草文案，让你的产品一夜爆红
+          </p>
         </div>
 
-        {/* 标签页 */}
+        {/* 标签导航 */}
         <div className="flex justify-center mb-8">
-          <div className="inline-flex rounded-xl bg-white shadow-sm border border-gray-200 p-1">
+          <div className="bg-white rounded-xl p-1 shadow-sm">
             <button
               onClick={() => setActiveTab('generate')}
-              className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
+              className={`px-6 py-3 rounded-lg font-medium transition-all ${
                 activeTab === 'generate'
                   ? 'bg-xiaohongshu-red text-white'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <MessageCircle className="w-4 h-4" />
-              文案生成
+              <div className="flex items-center gap-2">
+                <MessageCircle className="w-4 h-4" />
+                生成文案
+              </div>
             </button>
             <button
               onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
+              className={`px-6 py-3 rounded-lg font-medium transition-all ${
                 activeTab === 'history'
                   ? 'bg-xiaohongshu-red text-white'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <History className="w-4 h-4" />
-              历史记录
+              <div className="flex items-center gap-2">
+                <History className="w-4 h-4" />
+                历史记录
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('favorites')}
+              className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                activeTab === 'favorites'
+                  ? 'bg-xiaohongshu-red text-white'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Heart className="w-4 h-4" />
+                收藏合集
+              </div>
             </button>
           </div>
         </div>
 
         {/* 内容区域 */}
-        <div className="grid lg:grid-cols-2 gap-8">
-          {/* 左侧 */}
-          <div>
-            {activeTab === 'generate' ? (
+        {activeTab === 'generate' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* 左侧输入面板 */}
+            <div>
               <InputPanel onSubmit={handleGenerate} isLoading={isLoading} />
-            ) : (
-              <HistoryPanel
-                history={history}
-                onSelect={handleSelectHistory}
-                onDelete={handleDeleteHistory}
-              />
-            )}
-          </div>
+            </div>
 
-          {/* 右侧 */}
-          <div>
-            {currentResults.length > 0 ? (
-              <div className="space-y-4">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">📝 生成结果</h3>
-                {currentResults.map((result) => (
-                  <ResultCard
-                    key={result.id}
-                    copy={result}
-                    onCopy={handleCopy}
-                    onFavorite={handleFavorite}
-                    onShare={handleShare}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="xiaohongshu-card text-center py-12">
-                <Sparkles className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">等待生成</h3>
-                <p className="text-gray-600">填写左侧表单，开始生成你的专属文案</p>
-              </div>
-            )}
+            {/* 右侧结果展示 */}
+            <div>
+              {currentResults.length > 0 ? (
+                <div className="space-y-4">
+                  {currentResults.map((copy) => (
+                    <div key={copy.id} onClick={() => handleCopyClick(copy)}>
+                      <ResultCard
+                        copy={copy}
+                        onCopy={() => handleCopy(`${copy.title}\n\n${copy.content}\n\n${copy.tags.map(tag => `#${tag}`).join(' ')}`)}
+                        onShare={() => handleShare(copy)}
+                        onFavorite={() => handleFavorite(copy)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="xiaohongshu-card">
+                  <div className="text-center py-16">
+                    <Sparkles className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      等待生成文案
+                    </h3>
+                    <p className="text-gray-500">
+                      填写左侧表单，AI 将为你生成爆款文案
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
-      
-      {/* Toast 通知 */}
-      {toasts.map((toast) => (
-        <Toast
-          key={toast.id}
-          message={toast.message}
-          type={toast.type}
-          onClose={() => removeToast(toast.id)}
+        )}
+
+        {activeTab === 'history' && (
+          <HistoryPanel
+            history={history}
+            onDeleteHistory={handleDeleteHistory}
+            onCopy={handleCopy}
+            onShare={handleShare}
+            onFavorite={handleFavorite}
+          />
+        )}
+
+        {activeTab === 'favorites' && (
+          <FavoritesPanel
+            history={history}
+            onDeleteHistory={handleDeleteHistory}
+            onCopy={handleCopy}
+            onShare={handleShare}
+            onFavorite={handleFavorite}
+          />
+        )}
+
+        {/* 详情弹窗 */}
+        <DetailModal
+          copy={selectedCopy}
+          isOpen={isModalOpen}
+          onClose={closeModal}
+          onCopy={handleCopy}
+          onShare={handleShare}
+          onFavorite={handleFavorite}
         />
-      ))}
+
+        {/* Toast 通知 */}
+        {toasts.map((toast) => (
+          <Toast
+            key={toast.id}
+            type={toast.type}
+            message={toast.message}
+            onClose={() => removeToast(toast.id)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
